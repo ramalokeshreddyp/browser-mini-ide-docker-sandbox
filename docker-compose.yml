@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  queue:
+    image: redis:7-alpine
+    container_name: mini_ide_queue
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    networks:
+      - mini_ide_net
+
+  api:
+    build:
+      context: ./backend/api
+      dockerfile: Dockerfile
+    container_name: mini_ide_api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - API_PORT=${API_PORT:-8000}
+      - API_HOST=0.0.0.0
+      - REDIS_URL=redis://queue:6379/0
+      - QUEUE_NAME=code_execution_queue
+    depends_on:
+      queue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - mini_ide_net
+
+  worker:
+    build:
+      context: ./backend/worker
+      dockerfile: Dockerfile
+    container_name: mini_ide_worker
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - /tmp:/tmp:rw
+    environment:
+      - REDIS_URL=redis://queue:6379/0
+      - QUEUE_NAME=code_execution_queue
+      - EXECUTION_TIMEOUT=${EXECUTION_TIMEOUT:-30}
+      - DOCKER_PYTHON_IMAGE=${DOCKER_PYTHON_IMAGE:-python:3.10-slim}
+      - DOCKER_NODE_IMAGE=${DOCKER_NODE_IMAGE:-node:18-alpine}
+    depends_on:
+      queue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis, os, sys; r = redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0')); sys.exit(0 if r.ping() else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - mini_ide_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mini_ide_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+      - VITE_WS_URL=${VITE_WS_URL:-ws://localhost:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - mini_ide_net
+
+networks:
+  mini_ide_net:
+    driver: bridge
