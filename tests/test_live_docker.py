@@ -1,8 +1,10 @@
+import pytest
 import urllib.request
 import json
 import asyncio
 import websockets
 
+@pytest.mark.asyncio
 async def test_live_docker():
     print("--- 1. Testing Health Endpoint ---")
     with urllib.request.urlopen('http://localhost:8001/health') as resp:
