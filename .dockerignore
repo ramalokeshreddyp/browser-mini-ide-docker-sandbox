@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.venv
+venv
+__pycache__
+**/*.pyc
+temp_runs
+scratch
